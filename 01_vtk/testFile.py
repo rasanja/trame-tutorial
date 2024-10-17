@@ -134,6 +134,9 @@ renderWindow.Render()
 # Trame GUI
 # -----------------------------------------------------------------------------
 
+
+
+
 server = get_server(client_type = "vue2")
 ctrl = server.controller
 
@@ -145,7 +148,18 @@ with SinglePageLayout(server) as layout:
             fluid=True,
             classes="pa-0 fill-height",
         ):
-            view = vtk.VtkLocalView(renderWindow)
+        #view = vtk.VtkLocalView(renderWindow)
+            with vuetify.VRow(classes="fill-height", style="flex-direction: column;"):
+                with vuetify.VCol(classes="flex-grow-1"):
+                    view = vtk.VtkLocalView(renderWindow)
+
+                with vuetify.VCol(classes="flex-grow-0",):
+                    html.Input(
+                        type="file",
+                        accept=".vtk",
+                        v_on_change="($event) => { $emit('file-selected', $event.target.files[0]) }",
+                    )
+
 
 
 # -----------------------------------------------------------------------------
