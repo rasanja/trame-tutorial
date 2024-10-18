@@ -3,6 +3,7 @@ import io
 from trame.app import get_server
 from trame.ui.vuetify import SinglePageLayout
 from trame.widgets import vtk, vuetify, html
+from vtkmodules.vtkIOLegacy import vtkGenericDataObjectReader
 
 from vtkmodules.vtkCommonColor import vtkNamedColors
 from vtkmodules.vtkCommonCore import vtkLookupTable
