@@ -65,7 +65,6 @@ renderWindowInteractor.GetInteractorStyle().SetCurrentStyleToTrackballCamera()
 # Read Data
 reader = vtkXMLUnstructuredGridReader()
 reader.SetFileName(os.path.join(CURRENT_DIRECTORY, "../data/test.vtu"))
-#reader.SetFileName(os.path.join(CURRENT_DIRECTORY, "../data/ugridex.vtu"))
 reader.Update()
 
 # Extract Array/Field information
@@ -171,37 +170,113 @@ cube_axes.SetFlyModeToOuterEdges()
 
 renderer.ResetCamera()
 
+def reset_pipeline():
+    # Extract Array/Field information
+    global renderer, dataset_arrays, fields, field_arrays,association, field, array,array_range
+    global default_array,default_min,default_max,mesh_mapper,mesh_actor,mesh_lut
+    global contour,contour_mapper,contour_value,contour_lut, contour_actor, cube_axes
+    dataset_arrays = None
+    dataset_arrays = []
+    fields = [
+        (reader.GetOutput().GetPointData(), vtkDataObject.FIELD_ASSOCIATION_POINTS),
+        (reader.GetOutput().GetCellData(), vtkDataObject.FIELD_ASSOCIATION_CELLS),
+    ]
+    for field in fields:
+        field_arrays, association = field
+        for i in range(field_arrays.GetNumberOfArrays()):
+            array = field_arrays.GetArray(i)
+            array_range = array.GetRange()
+            dataset_arrays.append(
+                {
+                    "text": array.GetName(),
+                    "value": i,
+                    "range": list(array_range),
+                    "type": association,
+                }
+            )
+    default_array = dataset_arrays[0]
+    default_min, default_max = default_array.get("range")
 
-def reset_pipeline(file_path):
-    print(f"Resetting pipeline with file: {file_path}")
-    # Remove all existing actors
-    renderer.RemoveAllViewProps()
+    # Mesh
+    mesh_mapper = vtkDataSetMapper()
+    mesh_mapper.SetInputConnection(reader.GetOutputPort())
+    mesh_actor = vtkActor()
+    mesh_actor.SetMapper(mesh_mapper)
+    renderer.AddActor(mesh_actor)
 
-    # Update reader with new file path
-    reader.SetFileName(file_path)
-    #reader.SetFileName(os.path.join(CURRENT_DIRECTORY, "../data/ugridex.vtu"))
-    reader.Update()
+    # Mesh: Setup default representation to surface
+    mesh_actor.GetProperty().SetRepresentationToSurface()
+    mesh_actor.GetProperty().SetPointSize(1)
+    mesh_actor.GetProperty().EdgeVisibilityOff()
 
-    # Check if data is available
-    output = reader.GetOutput()
-    if not output or output.GetNumberOfPoints() == 0:
-        print("No data loaded from file:", file_path)
-        return
+    # Mesh: Apply rainbow color map
+    mesh_lut = mesh_mapper.GetLookupTable()
+    mesh_lut.SetHueRange(0.666, 0.0)
+    mesh_lut.SetSaturationRange(1.0, 1.0)
+    mesh_lut.SetValueRange(1.0, 1.0)
+    mesh_lut.Build()
 
-    # Create a new actor from the updated reader data
-    mapper = vtkDataSetMapper()
-    mapper.SetInputConnection(reader.GetOutputPort())
+    # Mesh: Color by default array
+    mesh_mapper.SelectColorArray(default_array.get("text"))
+    mesh_mapper.GetLookupTable().SetRange(default_min, default_max)
+    if default_array.get("type") == vtkDataObject.FIELD_ASSOCIATION_POINTS:
+        mesh_mapper.SetScalarModeToUsePointFieldData()
+    else:
+        mesh_mapper.SetScalarModeToUseCellFieldData()
+    mesh_mapper.SetScalarVisibility(True)
+    mesh_mapper.SetUseLookupTableScalarRange(True)
 
-    actor = vtkActor()
-    actor.SetMapper(mapper)
+    # Contour
+    contour = vtkContourFilter()
+    contour.SetInputConnection(reader.GetOutputPort())
+    contour_mapper = vtkDataSetMapper()
+    contour_mapper.SetInputConnection(contour.GetOutputPort())
+    contour_actor = vtkActor()
+    contour_actor.SetMapper(contour_mapper)
+    renderer.AddActor(contour_actor)
 
-    # Add actor to renderer
-    renderer.AddActor(actor)
-    actor.SetVisibility(True)
+    # Contour: ContourBy default array
+    contour_value = 0.5 * (default_max + default_min)
+    contour.SetInputArrayToProcess(
+        0, 0, 0, default_array.get("type"), default_array.get("text")
+    )
+    contour.SetValue(0, contour_value)
 
-    # Reset camera and render window
+    # Contour: Setup default representation to surface
+    contour_actor.GetProperty().SetRepresentationToSurface()
+    contour_actor.GetProperty().SetPointSize(1)
+    contour_actor.GetProperty().EdgeVisibilityOff()
+
+    # Contour: Apply rainbow color map
+    contour_lut = contour_mapper.GetLookupTable()
+    contour_lut.SetHueRange(0.666, 0.0)
+    contour_lut.SetSaturationRange(1.0, 1.0)
+    contour_lut.SetValueRange(1.0, 1.0)
+    contour_lut.Build()
+
+    # Contour: Color by default array
+    contour_mapper.SelectColorArray(default_array.get("text"))
+    contour_mapper.GetLookupTable().SetRange(default_min, default_max)
+    if default_array.get("type") == vtkDataObject.FIELD_ASSOCIATION_POINTS:
+        contour_mapper.SetScalarModeToUsePointFieldData()
+    else:
+        contour_mapper.SetScalarModeToUseCellFieldData()
+    contour_mapper.SetScalarVisibility(True)
+    contour_mapper.SetUseLookupTableScalarRange(True)
+
+    # Cube Axes
+    cube_axes = vtkCubeAxesActor()
+    renderer.AddActor(cube_axes)
+
+    # Cube Axes: Boundaries, camera, and styling
+    cube_axes.SetBounds(mesh_actor.GetBounds())
+    cube_axes.SetCamera(renderer.GetActiveCamera())
+    cube_axes.SetXLabelFormat("%6.1f")
+    cube_axes.SetYLabelFormat("%6.1f")
+    cube_axes.SetZLabelFormat("%6.1f")
+    cube_axes.SetFlyModeToOuterEdges()
+
     renderer.ResetCamera()
-    renderWindow.Render()
 # -----------------------------------------------------------------------------
 # Trame setup
 # -----------------------------------------------------------------------------
@@ -229,7 +304,10 @@ def update_vtk_reader(selected_file, **kwargs):
         reader.Update()
 
         # Reset and update your VTK pipeline here
-        reset_pipeline(file_path)
+        #reset_pipeline(file_path)
+        reset_pipeline()
+        ctrl.view_update()
+
 
 
 @state.change("cube_axes_visibility")
