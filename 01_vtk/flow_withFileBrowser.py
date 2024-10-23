@@ -3,6 +3,7 @@ import io
 mask = None
 vectorActor = None
 iso = None
+threshold = None
 
 from trame.app import get_server
 from trame.ui.vuetify import SinglePageLayout
@@ -55,17 +56,20 @@ def load_vtk_file(file_obj):
     reader.Update()
 
     output = reader.GetOutput()
-
     if not output:
         print("Error: Unable to read VTK file")
         return
 
-    # Check data range
+    global threshold
+    threshold = vtkThresholdPoints()
+    threshold.SetInputData(output)
+
+    # Check if there's point data
     point_data = output.GetPointData()
     if point_data and point_data.GetNumberOfArrays() > 0:
         data_array = point_data.GetArray(0)
         if data_array:
-            print(f"Data range: {data_array.GetRange()}")  # Debug print for range check
+            threshold.ThresholdByUpper(data_array.GetRange()[0])  # Use the minimum value as threshold
 
     # Outline
     outline = vtkOutlineFilter()
