@@ -294,10 +294,8 @@ state.setdefault("active_ui", None)
 def update_vtk_reader(selected_file, **kwargs):
     if selected_file:
         # Get the full path of the selected file
-        file_path = selected_file['name']
-        file_path = selected_file.get('path')
-        file_path = "/Users/TrameDirectory/trame-tutorial/data/disk_out_ref.vtu"
-        #file_path = os.path.join(CURRENT_DIRECTORY, "../data/ugridex.vtu")
+        print(f"curr dir is:{CURRENT_DIRECTORY}")
+        file_path = os.path.join(CURRENT_DIRECTORY, "../data/" + selected_file['name'])
 
         # Update the reader with the new file path
         reader.SetFileName(file_path)
