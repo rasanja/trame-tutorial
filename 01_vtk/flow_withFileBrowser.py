@@ -1,5 +1,9 @@
 import os
 import io
+mask = None
+vectorActor = None
+iso = None
+
 from trame.app import get_server
 from trame.ui.vuetify import SinglePageLayout
 from trame.widgets import vtk, vuetify, html
@@ -30,10 +34,11 @@ import vtkmodules.vtkRenderingOpenGL2
 # -----------------------------------------------------------------------------
 # VTK pipeline
 # -----------------------------------------------------------------------------
-
 renderer = vtkRenderer()
 renderWindow = vtkRenderWindow()
 renderWindow.AddRenderer(renderer)
+
+
 
 renderWindowInteractor = vtkRenderWindowInteractor()
 renderWindowInteractor.SetRenderWindow(renderWindow)
@@ -43,23 +48,30 @@ colors = vtkNamedColors()
 
 
 def load_vtk_file(file_obj):
+    global mask, vectorActor, iso
     reader = vtkStructuredPointsReader()
     reader.SetReadFromInputString(True)
-    reader.SetInputString(file_obj.getvalue())
+    reader.SetInputString(file_obj.getvalue())  # This line is correct
     reader.Update()
 
     output = reader.GetOutput()
+
     if not output:
         print("Error: Unable to read VTK file")
         return
 
+    # Check data range
+    point_data = output.GetPointData()
+    if point_data and point_data.GetNumberOfArrays() > 0:
+        data_array = point_data.GetArray(0)
+        if data_array:
+            print(f"Data range: {data_array.GetRange()}")  # Debug print for range check
+
     # Outline
     outline = vtkOutlineFilter()
     outline.SetInputData(output)
-
     outlineMapper = vtkPolyDataMapper()
     outlineMapper.SetInputConnection(outline.GetOutputPort())
-
     outlineActor = vtkActor()
     outlineActor.SetMapper(outlineMapper)
     outlineActor.GetProperty().SetColor(colors.GetColor3d("White"))
@@ -129,6 +141,32 @@ def load_vtk_file(file_obj):
     renderer.ResetCamera()
     renderWindow.Render()
 
+
+
+def apply_filters(threshold_value, opacity_value):
+    global mask, vectorActor, iso
+    if mask and vectorActor:
+        point_data = mask.GetInput().GetPointData()
+        if point_data and point_data.GetNumberOfArrays() > 0:
+            data_array = point_data.GetArray(0)
+            if data_array:
+                data_range = data_array.GetRange()
+                threshold = threshold_value / 100 * (data_range[1] - data_range[0]) + data_range[0]
+
+                print(f"Applying threshold: {threshold}, opacity: {opacity_value}")  # Debug print
+
+                # Update threshold filter
+                mask.GetInputAlgorithm().ThresholdByUpper(threshold)
+
+                # Update opacity of vector actor
+                vectorActor.GetProperty().SetOpacity(opacity_value)
+
+                # Update contour filter if applicable
+                if iso:
+                    iso.SetValue(0, threshold)
+
+    renderWindow.Render()
+    ctrl.view_update()
 # -----------------------------------------------------------------------------
 # Trame GUI
 # -----------------------------------------------------------------------------
@@ -138,12 +176,14 @@ ctrl = server.controller
 state = server.state
 
 
+state.threshold_value = 50
+state.opacity_value = 1
+
 @state.change("selected_file")
 def handle_file_selected(selected_file, **kwargs):
     if selected_file and "content" in selected_file:
         file_content = selected_file["content"]
         file_name = selected_file.get("name", "unnamed.vtk")
-
         print(f"Loading file: {file_name}")  # Debug print
 
         # Create a temporary file-like object
@@ -155,6 +195,9 @@ def handle_file_selected(selected_file, **kwargs):
     else:
         print("No file selected or invalid file information")
 
+@state.change("threshold_value", "opacity_value")
+def update_filters(threshold_value, opacity_value, **kwargs):
+    apply_filters(threshold_value, opacity_value)
 
 with SinglePageLayout(server) as layout:
     layout.title.set_text("VTK File Viewer")
@@ -171,6 +214,22 @@ with SinglePageLayout(server) as layout:
                         label="Select VTK file",
                         accept=".vtk",
                         v_model=("selected_file", None),
+                    )
+                    vuetify.VSlider(
+                        label="Threshold",
+                        v_model=("threshold_value", 0),
+                        min=0,
+                        max=100,
+                        step=1,
+                        thumb_label="always",
+                    )
+                    vuetify.VSlider(
+                        label="Opacity",
+                        v_model=("opacity_value", 1),
+                        min=0,
+                        max=1,
+                        step=0.1,
+                        thumb_label="always",
                     )
 
 # -----------------------------------------------------------------------------
