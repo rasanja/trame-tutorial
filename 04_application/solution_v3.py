@@ -11,6 +11,10 @@ from vtkmodules.vtkFiltersCore import vtkContourFilter
 from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridReader
 from vtkmodules.vtkRenderingAnnotation import vtkCubeAxesActor
 
+from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget
+from vtk import vtkAxesActor
+
+
 from vtkmodules.vtkRenderingCore import (
     vtkActor,
     vtkDataSetMapper,
@@ -98,10 +102,30 @@ contour_mapper = vtkDataSetMapper()
 contour_actor = vtkActor()
 contour_lut = contour_mapper.GetLookupTable()
 cube_axes = vtkCubeAxesActor()
+
+axes = vtkAxesActor()
+widget = vtkOrientationMarkerWidget()
+widget.SetOrientationMarker(axes)
+widget.SetInteractor(renderWindowInteractor)
+widget.SetViewport(0.0, 0.0, 0.1, 0.1)
+widget.SetEnabled(1)
+widget.InteractiveOff()
 contour_value = 0.5 * (default_max + default_min)
+
+# server = get_server(client_type="vue2")
+# state, ctrl = server.state, server.controller
+# state.setdefault("active_ui", None)
+# state.setdefault("color_array_items", dataset_arrays)
+
+def update_viewport_axes_visibility(visibility):
+    widget.SetEnabled(visibility)
+    print("update_axes_visibility!")
+    axes.SetVisibility(visibility)
+    ctrl.view_update()
 
 def load_data():
     print("Dataset_arrays: ", dataset_arrays)
+    print("Load_data called!!!!")
 # Mesh
     mesh_mapper.SetInputConnection(reader.GetOutputPort())
     mesh_actor.SetMapper(mesh_mapper)
@@ -172,7 +196,7 @@ def load_data():
     cube_axes.SetYLabelFormat("%6.1f")
     cube_axes.SetZLabelFormat("%6.1f")
     cube_axes.SetFlyModeToOuterEdges()
-
+    renderer.AddActor(axes)
     renderer.ResetCamera()
 
 load_data()
@@ -183,32 +207,11 @@ def reset_pipeline():
     print("Resetting pipeline")
     # Remove all existing actors
     renderer.RemoveAllViewProps()
-
-    # Update reader with new file path
-    # reader.SetFileName(file_path)
-    # #reader.SetFileName(os.path.join(CURRENT_DIRECTORY, "../data/ugridex.vtu"))
-    # reader.Update()
-
-    # # Check if data is available
-    # output = reader.GetOutput()
-    # if not output or output.GetNumberOfPoints() == 0:
-    #     print("No data loaded from file:", file_path)
-    #     return
-
-    # # Create a new actor from the updated reader data
-    # mapper = vtkDataSetMapper()
-    # mapper.SetInputConnection(reader.GetOutputPort())
-
-    # actor = vtkActor()
-    # actor.SetMapper(mapper)
-
-    # # Add actor to renderer
-    # renderer.AddActor(actor)
-    # actor.SetVisibility(True)
-
     # Reset camera and render window
+    load_data()
     renderer.ResetCamera()
     renderWindow.Render()
+
 
 reset_pipeline()
 # -----------------------------------------------------------------------------
@@ -221,9 +224,29 @@ state, ctrl = server.state, server.controller
 state.setdefault("active_ui", None)
 state.setdefault("color_array_items", dataset_arrays)
 
+
 # -----------------------------------------------------------------------------
 # Callbacks
 # -----------------------------------------------------------------------------
+state.setdefault("viewport_axes_visibility", True)
+state.setdefault("white_background", True)
+
+@state.change("viewport_axes_visibility")
+def toggle_viewport_axes_visibility(viewport_axes_visibility, **kwargs):
+    update_viewport_axes_visibility(viewport_axes_visibility)
+
+def set_background_color(color):
+    renderer.SetBackground(color)
+    ctrl.view_update()
+
+@state.change("white_background")
+def toggle_background_color(white_background, **kwargs):
+    if white_background:
+        set_background_color([1, 1, 1])  # White
+    else:
+        set_background_color([0.1, 0.1, 0.1])  # Dark grey (default VTK background)
+
+
 # Function to update the reader with the selected file
 @state.change("selected_file")
 def update_vtk_reader(selected_file, **kwargs):
@@ -276,6 +299,7 @@ def update_vtk_reader(selected_file, **kwargs):
         # Reset and update your VTK pipeline here
         # reset_pipeline(file_path)
         load_data()
+        set_background_color([1, 1, 1]) #to make it white
         ctrl.view_update()
 
 
@@ -463,6 +487,22 @@ def standard_buttons():
         v_model=("cube_axes_visibility", True),
         on_icon="mdi-cube-outline",
         off_icon="mdi-cube-off-outline",
+        classes="mx-1",
+        hide_details=True,
+        dense=True,
+    )
+    vuetify.VCheckbox(
+        v_model=("viewport_axes_visibility", True),
+        on_icon="mdi-axis-arrow",
+        off_icon="mdi-axis-arrow-off",
+        classes="mx-1",
+        hide_details=True,
+        dense=True,
+    )
+    vuetify.VCheckbox( #for background
+        v_model=("white_background", True),
+        on_icon="mdi-white-balance-sunny",
+        off_icon="mdi-weather-night",
         classes="mx-1",
         hide_details=True,
         dense=True,
