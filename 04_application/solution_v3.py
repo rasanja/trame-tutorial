@@ -494,7 +494,7 @@ def standard_buttons():
     vuetify.VCheckbox(
         v_model=("viewport_axes_visibility", True),
         on_icon="mdi-axis-arrow",
-        off_icon="mdi-axis-arrow-off",
+        off_icon="mdi-axis-arrow-lock",
         classes="mx-1",
         hide_details=True,
         dense=True,
