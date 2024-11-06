@@ -111,6 +111,7 @@ widget.SetViewport(0.0, 0.0, 0.1, 0.1)
 widget.SetEnabled(1)
 widget.InteractiveOff()
 contour_value = 0.5 * (default_max + default_min)
+renderer.SetBackground((82/255, 87/255, 110/255))
 
 # server = get_server(client_type="vue2")
 # state, ctrl = server.state, server.controller
@@ -229,7 +230,6 @@ state.setdefault("color_array_items", dataset_arrays)
 # Callbacks
 # -----------------------------------------------------------------------------
 state.setdefault("viewport_axes_visibility", True)
-state.setdefault("white_background", True)
 
 @state.change("viewport_axes_visibility")
 def toggle_viewport_axes_visibility(viewport_axes_visibility, **kwargs):
@@ -238,14 +238,6 @@ def toggle_viewport_axes_visibility(viewport_axes_visibility, **kwargs):
 def set_background_color(color):
     renderer.SetBackground(color)
     ctrl.view_update()
-
-@state.change("white_background")
-def toggle_background_color(white_background, **kwargs):
-    if white_background:
-        set_background_color([1, 1, 1])  # White
-    else:
-        set_background_color([0.1, 0.1, 0.1])  # Dark grey (default VTK background)
-
 
 # Function to update the reader with the selected file
 @state.change("selected_file")
@@ -299,7 +291,6 @@ def update_vtk_reader(selected_file, **kwargs):
         # Reset and update your VTK pipeline here
         # reset_pipeline(file_path)
         load_data()
-        set_background_color([1, 1, 1]) #to make it white
         ctrl.view_update()
 
 
@@ -499,22 +490,7 @@ def standard_buttons():
         hide_details=True,
         dense=True,
     )
-    vuetify.VCheckbox( #for background
-        v_model=("white_background", True),
-        on_icon="mdi-white-balance-sunny",
-        off_icon="mdi-weather-night",
-        classes="mx-1",
-        hide_details=True,
-        dense=True,
-    )
-    vuetify.VCheckbox(
-        v_model="$vuetify.theme.dark",
-        on_icon="mdi-lightbulb-off-outline",
-        off_icon="mdi-lightbulb-outline",
-        classes="mx-1",
-        hide_details=True,
-        dense=True,
-    )
+    
     vuetify.VCheckbox(
         v_model=("viewMode", "local"),
         on_icon="mdi-lan-disconnect",
