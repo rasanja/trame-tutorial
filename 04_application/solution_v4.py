@@ -288,7 +288,22 @@ def standard_buttons():
         hide_details=True,
         dense=True,
     )
-
+    vuetify.VCheckbox( #for background
+        v_model=("white_background", True),
+        on_icon="mdi-white-balance-sunny",
+        off_icon="mdi-weather-night",
+        classes="mx-1",
+        hide_details=True,
+        dense=True,
+    )
+    vuetify.VCheckbox(
+        v_model="$vuetify.theme.dark",
+        on_icon="mdi-lightbulb-off-outline",
+        off_icon="mdi-lightbulb-outline",
+        classes="mx-1",
+        hide_details=True,
+        dense=True,
+    )
     vuetify.VCheckbox(
         v_model=("viewMode", "local"),
         on_icon="mdi-lan-disconnect",
@@ -329,14 +344,6 @@ def ui_card(title, ui_name):
 
 def mesh_card():
     with ui_card(title="Mesh", ui_name="mesh"):
-        vuetify.VCheckbox(
-            v_model=("mesh_visibility", True),
-            on_icon="mdi-eye-outline",
-            off_icon="mdi-eye-closed",
-            classes="mx-1",
-            hide_details=True,
-            dense=True,
-        )
         vuetify.VSelect(
             # Representation
             v_model=("mesh_representation", Representation.Surface),
@@ -361,7 +368,7 @@ def mesh_card():
                     # Color By
                     label="Color by",
                     v_model=("mesh_color_array_idx", 0),
-                    items=("array_list", state.color_array_items),
+                    items=("array_list", dataset_arrays),
                     hide_details=True,
                     dense=True,
                     outlined=True,
@@ -400,19 +407,11 @@ def mesh_card():
 
 def contour_card():
     with ui_card(title="Contour", ui_name="contour"):
-        vuetify.VCheckbox(
-            v_model=("contour_visibility", True),
-            on_icon="mdi-eye-outline",
-            off_icon="mdi-eye-closed",
-            classes="mx-1",
-            hide_details=True,
-            dense=True,
-        )
         vuetify.VSelect(
             # Contour By
             label="Contour by",
             v_model=("contour_by_array_idx", 0),
-            items=("array_list", state.color_array_items),
+            items=("array_list", dataset_arrays),
             hide_details=True,
             dense=True,
             outlined=True,
@@ -453,7 +452,7 @@ def contour_card():
                     # Color By
                     label="Color by",
                     v_model=("contour_color_array_idx", 0),
-                    items=("array_list", state.color_array_items),
+                    items=("array_list", dataset_arrays),
                     hide_details=True,
                     dense=True,
                     outlined=True,
