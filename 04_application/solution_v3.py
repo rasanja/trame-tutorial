@@ -1,20 +1,15 @@
 import os
-
 from trame.app import get_server
 from trame.ui.vuetify import SinglePageWithDrawerLayout
 from trame.widgets import vtk, vuetify, trame
-
 from trame_vtk.modules.vtk.serializers import configure_serializer
-
+from vtkmodules.vtkCommonCore import vtkLookupTable
 from vtkmodules.vtkCommonDataModel import vtkDataObject
 from vtkmodules.vtkFiltersCore import vtkContourFilter
 from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridReader
 from vtkmodules.vtkRenderingAnnotation import vtkCubeAxesActor
-
 from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget
 from vtk import vtkAxesActor
-
-
 from vtkmodules.vtkRenderingCore import (
     vtkActor,
     vtkDataSetMapper,
@@ -22,23 +17,26 @@ from vtkmodules.vtkRenderingCore import (
     vtkRenderWindow,
     vtkRenderWindowInteractor,
 )
-
-# Required for interactor initialization
 from vtkmodules.vtkInteractionStyle import vtkInteractorStyleSwitch  # noqa
-
-# Required for rendering initialization, not necessary for
-# local rendering, but doesn't hurt to include it
 import vtkmodules.vtkRenderingOpenGL2  # noqa
 
+# -----------------------------------------------------------------------------
+# Constants / Globals
+# -----------------------------------------------------------------------------
 CURRENT_DIRECTORY = os.path.abspath(os.path.dirname(__file__))
-
-# Configure scene encoder
-configure_serializer(encode_lut=True, skip_light=True)
-
-# -----------------------------------------------------------------------------
-# Constants
-# -----------------------------------------------------------------------------
-
+configure_serializer(encode_lut=True, skip_light=True) # Configure scene encoder
+dataset_arrays = [] # Extract Array/Field information
+default_array = {
+    "text": "",
+    "value": 0,
+    "range": [0.0, 0.0],
+    "type": None
+}
+default_min,default_max = 0,0
+renderer,renderWindow,renderWindowInteractor = vtkRenderer(),vtkRenderWindow(),vtkRenderWindowInteractor()
+mesh_lut, mesh_actor,mesh_mapper = vtkLookupTable(),vtkActor(),vtkDataSetMapper()
+contour, contour_actor,contour_lut, contour_mapper = vtkContourFilter(), vtkActor(), vtkLookupTable(), vtkDataSetMapper()
+axes, widget, contour_value,cube_axes = vtkAxesActor(),vtkOrientationMarkerWidget(), 0, vtkCubeAxesActor()
 
 class Representation:
     Points = 0
@@ -55,75 +53,67 @@ class LookupTable:
 
 
 # -----------------------------------------------------------------------------
-# VTK pipeline
+# Callbacks
 # -----------------------------------------------------------------------------
+def extract_array():
+    global dataset_arrays, default_array, default_min, default_max
+    fields = [
+        (reader.GetOutput().GetPointData(), vtkDataObject.FIELD_ASSOCIATION_POINTS),
+        (reader.GetOutput().GetCellData(), vtkDataObject.FIELD_ASSOCIATION_CELLS),
+    ]
+    for field in fields:
+        field_arrays, association = field
+        for i in range(field_arrays.GetNumberOfArrays()):
+            array = field_arrays.GetArray(i)
+            array_range = array.GetRange()
+            dataset_arrays.append(
+                {
+                    "text": array.GetName(),
+                    "value": i,
+                    "range": list(array_range),
+                    "type": association,
+                }
+            )
+    default_array = dataset_arrays[0]
+    default_min, default_max = default_array.get("range")
 
-renderer = vtkRenderer()
-renderWindow = vtkRenderWindow()
-renderWindow.AddRenderer(renderer)
+def vtk_test_pipeline():
+    global renderer, renderWindow, renderWindowInteractor
+    renderer = vtkRenderer()
+    renderWindow = vtkRenderWindow()
+    renderWindow.AddRenderer(renderer)
+    renderWindowInteractor = vtkRenderWindowInteractor()
+    renderWindowInteractor.SetRenderWindow(renderWindow)
+    renderWindowInteractor.GetInteractorStyle().SetCurrentStyleToTrackballCamera()
 
-renderWindowInteractor = vtkRenderWindowInteractor()
-renderWindowInteractor.SetRenderWindow(renderWindow)
-renderWindowInteractor.GetInteractorStyle().SetCurrentStyleToTrackballCamera()
+def mesh_mapper_func():
+    global mesh_actor, mesh_lut,mesh_mapper
+    mesh_mapper = vtkDataSetMapper()
+    mesh_actor = vtkActor()
+    mesh_lut = mesh_mapper.GetLookupTable()
 
-# Read Data
-reader = vtkXMLUnstructuredGridReader()
-reader.SetFileName(os.path.join(CURRENT_DIRECTORY, "../data/unstructured3dQuads-CharData.vtu"))
-#reader.SetFileName(os.path.join(CURRENT_DIRECTORY, "../data/ugridex.vtu"))
-reader.Update()
+def setup_contour_visualization():
+    global contour, contour_actor, contour_lut,contour_mapper
+    contour = vtkContourFilter()
+    contour_mapper = vtkDataSetMapper()
+    contour_actor = vtkActor()
+    contour_lut = contour_mapper.GetLookupTable()
 
-# Extract Array/Field information
-dataset_arrays = []
-fields = [
-    (reader.GetOutput().GetPointData(), vtkDataObject.FIELD_ASSOCIATION_POINTS),
-    (reader.GetOutput().GetCellData(), vtkDataObject.FIELD_ASSOCIATION_CELLS),
-]
-for field in fields:
-    field_arrays, association = field
-    for i in range(field_arrays.GetNumberOfArrays()):
-        array = field_arrays.GetArray(i)
-        array_range = array.GetRange()
-        dataset_arrays.append(
-            {
-                "text": array.GetName(),
-                "value": i,
-                "range": list(array_range),
-                "type": association,
-            }
-        )
-default_array = dataset_arrays[0]
-default_min, default_max = default_array.get("range")
-
-mesh_mapper = vtkDataSetMapper()
-mesh_actor = vtkActor()
-mesh_lut = mesh_mapper.GetLookupTable()
-contour = vtkContourFilter()
-contour_mapper = vtkDataSetMapper()
-contour_actor = vtkActor()
-contour_lut = contour_mapper.GetLookupTable()
-cube_axes = vtkCubeAxesActor()
-
-axes = vtkAxesActor()
-widget = vtkOrientationMarkerWidget()
-widget.SetOrientationMarker(axes)
-widget.SetInteractor(renderWindowInteractor)
-widget.SetViewport(0.0, 0.0, 0.1, 0.1)
-widget.SetEnabled(1)
-widget.InteractiveOff()
-contour_value = 0.5 * (default_max + default_min)
-
-# server = get_server(client_type="vue2")
-# state, ctrl = server.state, server.controller
-# state.setdefault("active_ui", None)
-# state.setdefault("color_array_items", dataset_arrays)
-
-def update_viewport_axes_visibility(visibility):
-    widget.SetEnabled(visibility)
-    print("update_axes_visibility!")
-    axes.SetVisibility(visibility)
-    ctrl.view_update()
+def setup_axes():
+    global axes, widget, contour_value,cube_axes
+    cube_axes = vtkCubeAxesActor()
+    axes = vtkAxesActor()
+    widget = vtkOrientationMarkerWidget()
+    widget.SetOrientationMarker(axes)
+    widget.SetInteractor(renderWindowInteractor)
+    widget.SetViewport(0.0, 0.0, 0.1, 0.1)
+    widget.SetEnabled(1)
+    widget.InteractiveOff()
+    contour_value = 0.5 * (default_max + default_min)
 
 def load_data():
+    global dataset_arrays, default_array, default_min, default_max,mesh_mapper,mesh_actor,mesh_lut
+    global contour, contour_actor, contour_lut, contour_mapper,renderer,cube_axes,contour_mapper,contour_value,axes
     print("Dataset_arrays: ", dataset_arrays)
     print("Load_data called!!!!")
 # Mesh
@@ -199,11 +189,8 @@ def load_data():
     renderer.AddActor(axes)
     renderer.ResetCamera()
 
-load_data()
-
-# def reset_pipeline(file_path):
 def reset_pipeline():
-    # print(f"Resetting pipeline with file: {file_path}")
+    global renderer,renderWindow
     print("Resetting pipeline")
     # Remove all existing actors
     renderer.RemoveAllViewProps()
@@ -212,107 +199,8 @@ def reset_pipeline():
     renderer.ResetCamera()
     renderWindow.Render()
 
-
-reset_pipeline()
-# -----------------------------------------------------------------------------
-# Trame setup
-# -----------------------------------------------------------------------------
-
-server = get_server(client_type="vue2")
-state, ctrl = server.state, server.controller
-
-state.setdefault("active_ui", None)
-state.setdefault("color_array_items", dataset_arrays)
-
-
-# -----------------------------------------------------------------------------
-# Callbacks
-# -----------------------------------------------------------------------------
-state.setdefault("viewport_axes_visibility", True)
-state.setdefault("white_background", True)
-
-@state.change("viewport_axes_visibility")
-def toggle_viewport_axes_visibility(viewport_axes_visibility, **kwargs):
-    update_viewport_axes_visibility(viewport_axes_visibility)
-
-def set_background_color(color):
-    renderer.SetBackground(color)
-    ctrl.view_update()
-
-@state.change("white_background")
-def toggle_background_color(white_background, **kwargs):
-    if white_background:
-        set_background_color([1, 1, 1])  # White
-    else:
-        set_background_color([0.1, 0.1, 0.1])  # Dark grey (default VTK background)
-
-
-# Function to update the reader with the selected file
-@state.change("selected_file")
-def update_vtk_reader(selected_file, **kwargs):
-    global reader
-    global dataset_arrays
-    global fields
-    if selected_file:
-        # Get the full path of the selected file
-        # file_path = selected_file['name']
-        # file_path = selected_file.get('path')
-        # file_path = os.path.join(CURRENT_DIRECTORY, "../data/disk_out_ref.vtu")
-        #file_path = os.path.join(CURRENT_DIRECTORY, "../data/ugridex.vtu")
-
-        print(f"curr dir is:{CURRENT_DIRECTORY}")
-        file_path = os.path.join(CURRENT_DIRECTORY, "../data/" + selected_file['name'])
-
-        # Update the reader with the new file path
-        reader.SetFileName(file_path)
-        reader.Update()
-
-        # Update the reader with the new file path
-        reader.SetFileName(file_path)
-        reader.Update()
-        dataset_arrays.clear()
-        fields.clear()
-        fields = [
-            (reader.GetOutput().GetPointData(), vtkDataObject.FIELD_ASSOCIATION_POINTS),
-            (reader.GetOutput().GetCellData(), vtkDataObject.FIELD_ASSOCIATION_CELLS),
-        ]
-        for field in fields:
-            field_arrays, association = field
-            for i in range(field_arrays.GetNumberOfArrays()):
-                array = field_arrays.GetArray(i)
-                array_range = array.GetRange()
-                dataset_arrays.append(
-                    {
-                        "text": array.GetName(),
-                        "value": i,
-                        "range": list(array_range),
-                        "type": association,
-                    }
-                )
-
-        global default_min
-        global default_max
-        default_array = dataset_arrays[0]
-        state.color_array_items = dataset_arrays
-        default_min, default_max = default_array.get("range")
-
-        # Reset and update your VTK pipeline here
-        # reset_pipeline(file_path)
-        load_data()
-        set_background_color([1, 1, 1]) #to make it white
-        ctrl.view_update()
-
-
-@state.change("cube_axes_visibility")
-def update_cube_axes_visibility(cube_axes_visibility, **kwargs):
-    print("update_cube_axes_visibility!")
-    cube_axes.SetVisibility(cube_axes_visibility)
-    ctrl.view_update()
-
-
 # Selection Change
 def actives_change(ids):
-    print("actives_change!")
     _id = ids[0]
     if _id == "1":  # Mesh
         state.active_ui = "mesh"
@@ -321,10 +209,8 @@ def actives_change(ids):
     else:
         state.active_ui = "nothing"
 
-
 # Visibility Change
 def visibility_change(event):
-    print("visibility_change")
     _id = event["id"]
     _visibility = event["visible"]
 
@@ -333,7 +219,6 @@ def visibility_change(event):
     elif _id == "2":  # Contour
         contour_actor.SetVisibility(_visibility)
     ctrl.view_update()
-
 
 # Representation Callbacks
 def update_representation(actor, mode):
@@ -355,55 +240,8 @@ def update_representation(actor, mode):
         property.SetPointSize(1)
         property.EdgeVisibilityOn()
 
-
-@state.change("mesh_representation")
-def update_mesh_representation(mesh_representation, **kwargs):
-    print("update_mesh_representation")
-    update_representation(mesh_actor, mesh_representation)
-    ctrl.view_update()
-
-
-@state.change("contour_representation")
-def update_contour_representation(contour_representation, **kwargs):
-    print("update contour representation")
-    update_representation(contour_actor, contour_representation)
-    ctrl.view_update()
-
-
-# Color By Callbacks
-def color_by_array(actor, array):
-    print("color by array")
-    _min, _max = array.get("range")
-    mapper = actor.GetMapper()
-    mapper.SelectColorArray(array.get("text"))
-    mapper.GetLookupTable().SetRange(_min, _max)
-    if array.get("type") == vtkDataObject.FIELD_ASSOCIATION_POINTS:
-        mesh_mapper.SetScalarModeToUsePointFieldData()
-    else:
-        mesh_mapper.SetScalarModeToUseCellFieldData()
-    mapper.SetScalarVisibility(True)
-    mapper.SetUseLookupTableScalarRange(True)
-
-
-@state.change("mesh_color_array_idx")
-def update_mesh_color_by_name(mesh_color_array_idx, **kwargs):
-    print("update_mesh_color_by_name")
-    array = dataset_arrays[mesh_color_array_idx]
-    color_by_array(mesh_actor, array)
-    ctrl.view_update()
-
-
-@state.change("contour_color_array_idx")
-def update_contour_color_by_name(contour_color_array_idx, **kwargs):
-    print("update_contour_color_by_name")
-    array = dataset_arrays[contour_color_array_idx]
-    color_by_array(contour_actor, array)
-    ctrl.view_update()
-
-
 # Color Map Callbacks
 def use_preset(actor, preset):
-    print("use_preset")
     lut = actor.GetMapper().GetLookupTable()
     if preset == LookupTable.Rainbow:
         lut.SetHueRange(0.666, 0.0)
@@ -423,65 +261,16 @@ def use_preset(actor, preset):
         lut.SetValueRange(1.0, 0.0)
     lut.Build()
 
-
-@state.change("mesh_color_preset")
-def update_mesh_color_preset(mesh_color_preset, **kwargs):
-    print("update_mesh_color_preset")
-    global mesh_actor
-    use_preset(mesh_actor, mesh_color_preset)
+def update_viewport_axes_visibility(visibility):
+    global widget,axes
+    widget.SetEnabled(visibility)
+    print("update_axes_visibility!")
+    axes.SetVisibility(visibility)
     ctrl.view_update()
-
-
-@state.change("contour_color_preset")
-def update_contour_color_preset(contour_color_preset, **kwargs):
-    use_preset(contour_actor, contour_color_preset)
-    ctrl.view_update()
-
-
-# Opacity Callbacks
-@state.change("mesh_opacity")
-def update_mesh_opacity(mesh_opacity, **kwargs):
-    mesh_actor.GetProperty().SetOpacity(mesh_opacity)
-    ctrl.view_update()
-
-
-@state.change("contour_opacity")
-def update_contour_opacity(contour_opacity, **kwargs):
-    contour_actor.GetProperty().SetOpacity(contour_opacity)
-    ctrl.view_update()
-
-
-# Contour Callbacks
-@state.change("contour_by_array_idx")
-def update_contour_by(contour_by_array_idx, **kwargs):
-    array = dataset_arrays[contour_by_array_idx]
-    contour_min, contour_max = array.get("range")
-    contour_step = 0.01 * (contour_max - contour_min)
-    contour_value = 0.5 * (contour_max + contour_min)
-    contour.SetInputArrayToProcess(0, 0, 0, array.get("type"), array.get("text"))
-    contour.SetValue(0, contour_value)
-
-    # Update UI
-    state.contour_min = contour_min
-    state.contour_max = contour_max
-    state.contour_value = contour_value
-    state.contour_step = contour_step
-
-    # Update View
-    ctrl.view_update()
-
-
-@state.change("contour_value")
-def update_contour_value(contour_value, **kwargs):
-    contour.SetValue(0, float(contour_value))
-    ctrl.view_update()
-
 
 # -----------------------------------------------------------------------------
 # GUI elements
 # -----------------------------------------------------------------------------
-
-
 def standard_buttons():
     vuetify.VCheckbox(
         v_model=("cube_axes_visibility", True),
@@ -528,7 +317,6 @@ def standard_buttons():
     with vuetify.VBtn(icon=True, click="$refs.view.resetCamera()"):
         vuetify.VIcon("mdi-crop-free")
 
-
 def pipeline_widget():
     trame.GitTree(
         sources=(
@@ -542,7 +330,6 @@ def pipeline_widget():
         visibility_change=(visibility_change, "[$event]"),
     )
 
-
 def ui_card(title, ui_name):
     with vuetify.VCard(v_show=f"active_ui == '{ui_name}'"):
         vuetify.VCardTitle(
@@ -554,7 +341,6 @@ def ui_card(title, ui_name):
         )
         content = vuetify.VCardText(classes="py-2")
     return content
-
 
 def mesh_card():
     with ui_card(title="Mesh", ui_name="mesh"):
@@ -582,7 +368,7 @@ def mesh_card():
                     # Color By
                     label="Color by",
                     v_model=("mesh_color_array_idx", 0),
-                    items=("array_list", state.color_array_items),
+                    items=("array_list", dataset_arrays),
                     hide_details=True,
                     dense=True,
                     outlined=True,
@@ -619,14 +405,13 @@ def mesh_card():
             dense=True,
         )
 
-
 def contour_card():
     with ui_card(title="Contour", ui_name="contour"):
         vuetify.VSelect(
             # Contour By
             label="Contour by",
             v_model=("contour_by_array_idx", 0),
-            items=("array_list", state.color_array_items),
+            items=("array_list", dataset_arrays),
             hide_details=True,
             dense=True,
             outlined=True,
@@ -667,7 +452,7 @@ def contour_card():
                     # Color By
                     label="Color by",
                     v_model=("contour_color_array_idx", 0),
-                    items=("array_list", state.color_array_items),
+                    items=("array_list", dataset_arrays),
                     hide_details=True,
                     dense=True,
                     outlined=True,
@@ -704,11 +489,49 @@ def contour_card():
             dense=True,
         )
 
+# Color By Callbacks
+def color_by_array(actor, array):
+    _min, _max = array.get("range")
+    mapper = actor.GetMapper()
+    mapper.SelectColorArray(array.get("text"))
+    mapper.GetLookupTable().SetRange(_min, _max)
+    if array.get("type") == vtkDataObject.FIELD_ASSOCIATION_POINTS:
+        mesh_mapper.SetScalarModeToUsePointFieldData()
+    else:
+        mesh_mapper.SetScalarModeToUseCellFieldData()
+    mapper.SetScalarVisibility(True)
+    mapper.SetUseLookupTableScalarRange(True)
+
+
+# -----------------------------------------------------------------------------
+# Trame setup / Sequential starts here
+# -----------------------------------------------------------------------------
+
+
+vtk_test_pipeline()
+# Read Data
+reader = vtkXMLUnstructuredGridReader()
+reader.SetFileName(os.path.join(CURRENT_DIRECTORY, "../data/unstructured3dQuads-CharData.vtu"))
+reader.Update()
+
+extract_array()
+mesh_mapper_func()
+setup_contour_visualization()
+setup_axes()
+load_data()
+reset_pipeline()
+
+server = get_server(client_type="vue2")
+state, ctrl = server.state, server.controller
+state.setdefault("active_ui", None)
+state.setdefault("color_array_items", dataset_arrays)
+
+state.setdefault("viewport_axes_visibility", True)
+state.setdefault("white_background", True)
 
 # -----------------------------------------------------------------------------
 # GUI
 # -----------------------------------------------------------------------------
-
 with SinglePageWithDrawerLayout(server) as layout:
     layout.title.set_text("Viewer")
 
@@ -749,8 +572,127 @@ with SinglePageWithDrawerLayout(server) as layout:
             ctrl.view_update = view.update
             ctrl.view_reset_camera = view.reset_camera
 
+
 # -----------------------------------------------------------------------------
-# Main
+# State Changes
+# -----------------------------------------------------------------------------
+@state.change("viewport_axes_visibility")
+def toggle_viewport_axes_visibility(viewport_axes_visibility, **kwargs):
+    update_viewport_axes_visibility(viewport_axes_visibility)
+
+def set_background_color(color):
+    renderer.SetBackground(color)
+    ctrl.view_update()
+
+@state.change("white_background")
+def toggle_background_color(white_background, **kwargs):
+    if white_background:
+        set_background_color([1, 1, 1])  # White
+    else:
+        set_background_color([0.1, 0.1, 0.1])  # Dark grey (default VTK background)
+
+@state.change("mesh_color_preset")
+def update_mesh_color_preset(mesh_color_preset, **kwargs):
+    use_preset(mesh_actor, mesh_color_preset)
+    ctrl.view_update()
+
+@state.change("contour_color_preset")
+def update_contour_color_preset(contour_color_preset, **kwargs):
+    use_preset(contour_actor, contour_color_preset)
+    ctrl.view_update()
+
+
+# Opacity Callbacks
+@state.change("mesh_opacity")
+def update_mesh_opacity(mesh_opacity, **kwargs):
+    mesh_actor.GetProperty().SetOpacity(mesh_opacity)
+    ctrl.view_update()
+
+
+@state.change("contour_opacity")
+def update_contour_opacity(contour_opacity, **kwargs):
+    contour_actor.GetProperty().SetOpacity(contour_opacity)
+    ctrl.view_update()
+
+
+# Contour Callbacks
+@state.change("contour_by_array_idx")
+def update_contour_by(contour_by_array_idx, **kwargs):
+    array = dataset_arrays[contour_by_array_idx]
+    contour_min, contour_max = array.get("range")
+    contour_step = 0.01 * (contour_max - contour_min)
+    contour_value = 0.5 * (contour_max + contour_min)
+    contour.SetInputArrayToProcess(0, 0, 0, array.get("type"), array.get("text"))
+    contour.SetValue(0, contour_value)
+
+    # Update UI
+    state.contour_min = contour_min
+    state.contour_max = contour_max
+    state.contour_value = contour_value
+    state.contour_step = contour_step
+
+    # Update View
+    ctrl.view_update()
+
+
+@state.change("contour_value")
+def update_contour_value(contour_value, **kwargs):
+    contour.SetValue(0, float(contour_value))
+    ctrl.view_update()
+
+
+@state.change("mesh_representation")
+def update_mesh_representation(mesh_representation, **kwargs):
+    update_representation(mesh_actor, mesh_representation)
+    ctrl.view_update()
+
+
+@state.change("contour_representation")
+def update_contour_representation(contour_representation, **kwargs):
+    update_representation(contour_actor, contour_representation)
+    ctrl.view_update()
+
+
+@state.change("mesh_color_array_idx")
+def update_mesh_color_by_name(mesh_color_array_idx, **kwargs):
+    array = dataset_arrays[mesh_color_array_idx]
+    color_by_array(mesh_actor, array)
+    ctrl.view_update()
+
+
+@state.change("contour_color_array_idx")
+def update_contour_color_by_name(contour_color_array_idx, **kwargs):
+    array = dataset_arrays[contour_color_array_idx]
+    color_by_array(contour_actor, array)
+    ctrl.view_update()
+
+# Function to update the reader with the selected file
+@state.change("selected_file")
+def update_vtk_reader(selected_file, **kwargs):
+    if selected_file:
+        # Get the full path of the selected file
+        print(f"curr dir is:{CURRENT_DIRECTORY}")
+        file_path = os.path.join(CURRENT_DIRECTORY, "../data/" + selected_file['name'])
+
+        # Update the reader with the new file path
+        reader.SetFileName(file_path)
+        reader.Update()
+
+        # Reset and update your VTK pipeline here
+        #reset_pipeline(file_path)
+        reset_pipeline()
+        ctrl.view_update()
+
+
+@state.change("cube_axes_visibility")
+def update_cube_axes_visibility(cube_axes_visibility, **kwargs):
+    cube_axes.SetVisibility(cube_axes_visibility)
+    ctrl.view_update()
+
+
+
+# -----------------------------------------------------------------------------
+# Main / Sequencial starts here
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
