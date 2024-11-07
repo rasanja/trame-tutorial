@@ -7,7 +7,8 @@ from trame.widgets import vtk, vuetify, trame
 from trame_vtk.modules.vtk.serializers import configure_serializer
 from vtkmodules.vtkCommonCore import vtkLookupTable
 from vtkmodules.vtkCommonDataModel import vtkDataObject
-from vtkmodules.vtkFiltersCore import vtkContourFilter
+from vtkmodules.vtkFiltersCore import vtkContourFilter, vtkGlyph3D
+from vtkmodules.vtkFiltersSources import vtkArrowSource  # Use arrow as the glyph
 from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridReader
 from vtkmodules.vtkRenderingAnnotation import vtkCubeAxesActor
 from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget
@@ -23,7 +24,7 @@ from vtkmodules.vtkInteractionStyle import vtkInteractorStyleSwitch  # noqa
 import vtkmodules.vtkRenderingOpenGL2  # noqa
 
 # -----------------------------------------------------------------------------
-# Constants / Globals
+# Constants / Global Initializations
 # -----------------------------------------------------------------------------
 CURRENT_DIRECTORY = os.path.abspath(os.path.dirname(__file__))
 configure_serializer(encode_lut=True, skip_light=True) # Configure scene encoder
@@ -39,6 +40,7 @@ renderer,renderWindow,renderWindowInteractor = vtkRenderer(),vtkRenderWindow(),v
 mesh_lut, mesh_actor,mesh_mapper = vtkLookupTable(),vtkActor(),vtkDataSetMapper()
 contour, contour_actor,contour_lut, contour_mapper = vtkContourFilter(), vtkActor(), vtkLookupTable(), vtkDataSetMapper()
 axes, widget, contour_value,cube_axes = vtkAxesActor(),vtkOrientationMarkerWidget(), 0, vtkCubeAxesActor()
+glyph_source, glyph_filter, glyph_mapper,glyph_actor =vtkArrowSource(), vtkGlyph3D(), vtkDataSetMapper(), vtkActor()
 
 class Representation:
     Points = 0
@@ -94,6 +96,23 @@ def mesh_mapper_func():
     mesh_actor = vtkActor()
     mesh_lut = mesh_mapper.GetLookupTable()
 
+def glyph_mapper_func():
+    global glyph_source, glyph_filter, glyph_mapper, reader
+    glyph_filter = vtkGlyph3D()
+    glyph_filter.SetSourceConnection(glyph_source.GetOutputPort())  # Set glyph shape
+    glyph_filter.SetInputConnection(reader.GetOutputPort())  # Connect VTU data
+    glyph_filter.SetScaleFactor(0.1)  # Adjust scale as needed for visibility
+
+    # Step 4: Set up the mapper and actor for glyphs
+    glyph_mapper = vtkDataSetMapper()
+    glyph_mapper.SetInputConnection(glyph_filter.GetOutputPort())
+    glyph_actor = vtkActor()
+    glyph_actor.SetMapper(glyph_mapper)
+    glyph_actor.SetVisibility(False)  # Start with glyph off (for toggling)
+
+    # Add the actor to the renderer
+    renderer.AddActor(glyph_actor)
+
 def setup_contour_visualization():
     global contour, contour_actor, contour_lut,contour_mapper
     contour = vtkContourFilter()
@@ -116,6 +135,7 @@ def setup_axes():
 def load_data():
     global dataset_arrays, default_array, default_min, default_max,mesh_mapper,mesh_actor,mesh_lut
     global contour, contour_actor, contour_lut, contour_mapper,renderer,cube_axes,contour_mapper,contour_value,axes
+    global glyph_filter, glyph_mapper, glyph_actor
     print("Dataset_arrays: ", dataset_arrays)
     print("Load_data called!!!!")
 # Mesh
@@ -179,6 +199,20 @@ def load_data():
     contour_mapper.SetScalarVisibility(True)
     contour_mapper.SetUseLookupTableScalarRange(True)
 
+    # Glyph setup
+    glyph_source = vtkArrowSource()  # Or use another glyph shape as needed
+    glyph_filter = vtkGlyph3D()
+    glyph_filter.SetSourceConnection(glyph_source.GetOutputPort())
+    glyph_filter.SetInputConnection(reader.GetOutputPort())  # Connect VTU data
+    glyph_filter.SetScaleFactor(0.1)  # Adjust for visibility
+
+    glyph_mapper = vtkDataSetMapper()
+    glyph_mapper.SetInputConnection(glyph_filter.GetOutputPort())
+    glyph_actor = vtkActor()
+    glyph_actor.SetMapper(glyph_mapper)
+    glyph_actor.SetVisibility(False)  # Start with glyph off
+    renderer.AddActor(glyph_actor)
+
     # Cube Axes
     renderer.AddActor(cube_axes)
 
@@ -208,6 +242,10 @@ def update_mesh_visibility(visibility):
 def update_contour_visibility(visibility):
     contour_actor.SetVisibility(visibility)
 
+def update_glyph_visibility(visibility):
+    global glyph_actor
+    glyph_actor.SetVisibility(visibility)
+
 # Selection Change
 def actives_change(ids):
     _id = ids[0]
@@ -215,6 +253,8 @@ def actives_change(ids):
         state.active_ui = "mesh"
     elif _id == "2":  # Contour
         state.active_ui = "contour"
+    elif _id == "3":  # Contour
+        state.active_ui = "glyph"
     else:
         state.active_ui = "nothing"
 
@@ -333,6 +373,7 @@ def pipeline_widget():
             [
                 {"id": "1", "parent": "0", "visible": 1, "name": "Mesh"},
                 {"id": "2", "parent": "1", "visible": 1, "name": "Contour"},
+                {"id": "3", "parent": "2", "visible": 1, "name": "Glyph"},
             ],
         ),
         actives_change=(actives_change, "[$event]"),
@@ -514,6 +555,93 @@ def contour_card():
             dense=True,
         )
 
+
+def glyph_card():
+    with ui_card(title="Glyph", ui_name="glyph"):
+        # Toggle Visibility
+        vuetify.VCheckbox(
+            v_model=("glyph_visibility", False),
+            on_icon="mdi-eye-outline",
+            off_icon="mdi-eye-closed",
+            classes="mx-1",
+            hide_details=True,
+            dense=True,
+        )
+
+        # Representation (e.g., Point, Surface, etc. if applicable for glyphs)
+        vuetify.VSelect(
+            v_model=("glyph_representation", Representation.Points),
+            items=(
+                "representations",
+                [
+                    {"text": "Points", "value": 0},
+                    {"text": "Wireframe", "value": 1},
+                    {"text": "Surface", "value": 2},
+                    {"text": "SurfaceWithEdges", "value": 3},
+                ],
+            ),
+            label="Representation",
+            hide_details=True,
+            dense=True,
+            outlined=True,
+            classes="pt-1",
+        )
+
+        # Color options (similar to mesh)
+        with vuetify.VRow(classes="pt-2", dense=True):
+            with vuetify.VCol(cols="6"):
+                vuetify.VSelect(
+                    label="Color by",
+                    v_model=("glyph_color_array_idx", 0),
+                    items=("array_list", dataset_arrays),
+                    hide_details=True,
+                    dense=True,
+                    outlined=True,
+                    classes="pt-1",
+                )
+            with vuetify.VCol(cols="6"):
+                vuetify.VSelect(
+                    label="Colormap",
+                    v_model=("glyph_color_preset", LookupTable.Rainbow),
+                    items=(
+                        "colormaps",
+                        [
+                            {"text": "Rainbow", "value": 0},
+                            {"text": "Inv Rainbow", "value": 1},
+                            {"text": "Greyscale", "value": 2},
+                            {"text": "Inv Greyscale", "value": 3},
+                        ],
+                    ),
+                    hide_details=True,
+                    dense=True,
+                    outlined=True,
+                    classes="pt-1",
+                )
+
+        # Scale Slider (specific to glyphs)
+        vuetify.VSlider(
+            v_model=("glyph_scale", 0.1),
+            min=0.01,
+            max=1.0,
+            step=0.01,
+            label="Scale",
+            classes="mt-1",
+            hide_details=True,
+            dense=True,
+        )
+
+        # Opacity Slider
+        vuetify.VSlider(
+            v_model=("glyph_opacity", 1.0),
+            min=0,
+            max=1,
+            step=0.1,
+            label="Opacity",
+            classes="mt-1",
+            hide_details=True,
+            dense=True,
+        )
+
 # Color By Callbacks
 def color_by_array(actor, array):
     _min, _max = array.get("range")
@@ -541,6 +669,7 @@ reader.Update()
 
 extract_array()
 mesh_mapper_func()
+glyph_mapper_func()
 setup_contour_visualization()
 setup_axes()
 renderer.SetBackground((82/255, 87/255, 110/255))
@@ -555,6 +684,7 @@ state.setdefault("color_array_items", dataset_arrays)
 state.setdefault("viewport_axes_visibility", True)
 state.setdefault("mesh_visibility", True)
 state.setdefault("contour_visibility", True)
+state.setdefault("glyph_visibility", True)
 
 
 
@@ -587,6 +717,7 @@ with SinglePageWithDrawerLayout(server) as layout:
         vuetify.VDivider(classes="mb-2")
         mesh_card()
         contour_card()
+        glyph_card()
 
     with layout.content:
         # content components
@@ -594,8 +725,6 @@ with SinglePageWithDrawerLayout(server) as layout:
             fluid=True,
             classes="pa-0 fill-height",
         ):
-            # view = vtk.VtkRemoteView(renderWindow, interactive_ratio=1)
-            # view = vtk.VtkLocalView(renderWindow)
             view = vtk.VtkRemoteLocalView(
                 renderWindow, namespace="view", mode="local", interactive_ratio=1
             )
@@ -742,6 +871,13 @@ def toggle_mesh_visibility(mesh_visibility, **kwargs):
 def toggle_contour_visibility(contour_visibility, **kwargs):
     print("update contour visibility!")
     update_contour_visibility(contour_visibility)
+
+# Define toggle function for glyph visibility
+@state.change("glyph_visibility")
+def toggle_glyph(glyph_visibility, **kwargs):
+    global glyph_actor
+    print("update glyph visibility!")
+    update_glyph_visibility(glyph_visibility)
 
 # -----------------------------------------------------------------------------
 # Main / Sequencial starts here
