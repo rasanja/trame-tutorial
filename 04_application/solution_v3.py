@@ -213,6 +213,12 @@ def reset_pipeline():
     renderer.ResetCamera()
     renderWindow.Render()
 
+def update_mesh_visibility(visibility):
+    mesh_actor.SetVisibility(visibility)
+
+def update_contour_visibility(visibility):
+    contour_actor.SetVisibility(visibility)
+
 
 reset_pipeline()
 # -----------------------------------------------------------------------------
@@ -230,13 +236,23 @@ state.setdefault("color_array_items", dataset_arrays)
 # Callbacks
 # -----------------------------------------------------------------------------
 state.setdefault("viewport_axes_visibility", True)
+state.setdefault("mesh_visibility", True)
+state.setdefault("contour_visibility", True)
 
 @state.change("viewport_axes_visibility")
 def toggle_viewport_axes_visibility(viewport_axes_visibility, **kwargs):
     update_viewport_axes_visibility(viewport_axes_visibility)
 
-def set_background_color(color):
-    renderer.SetBackground(color)
+@state.change("mesh_visibility")
+def toggle_mesh_visibility(mesh_visibility, **kwargs):
+    print("update mesh visibility!")
+    update_mesh_visibility(mesh_visibility)
+    ctrl.view_update()
+
+@state.change("contour_visibility")
+def toggle_contour_visibility(contour_visibility, **kwargs):
+    print("update contour visibility!")
+    update_contour_visibility(contour_visibility)
     ctrl.view_update()
 
 # Function to update the reader with the selected file
@@ -534,6 +550,14 @@ def ui_card(title, ui_name):
 
 def mesh_card():
     with ui_card(title="Mesh", ui_name="mesh"):
+        vuetify.VCheckbox(
+            v_model=("mesh_visibility", True),
+            on_icon="mdi-eye-outline",
+            off_icon="mdi-eye-closed",
+            classes="mx-1",
+            hide_details=True,
+            dense=True,
+        )
         vuetify.VSelect(
             # Representation
             v_model=("mesh_representation", Representation.Surface),
@@ -598,6 +622,14 @@ def mesh_card():
 
 def contour_card():
     with ui_card(title="Contour", ui_name="contour"):
+        vuetify.VCheckbox(
+            v_model=("contour_visibility", True),
+            on_icon="mdi-eye-outline",
+            off_icon="mdi-eye-closed",
+            classes="mx-1",
+            hide_details=True,
+            dense=True,
+        )
         vuetify.VSelect(
             # Contour By
             label="Contour by",
