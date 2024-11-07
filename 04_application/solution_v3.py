@@ -1,4 +1,6 @@
 import os
+
+from fontTools.ttLib.tables.C_P_A_L_ import Color
 from trame.app import get_server
 from trame.ui.vuetify import SinglePageWithDrawerLayout
 from trame.widgets import vtk, vuetify, trame
@@ -150,6 +152,7 @@ def load_data():
 
     # Contour: ContourBy default array
     contour_value = 0.5 * (default_max + default_min)
+    renderer.SetBackground((82 / 255, 87 / 255, 110 / 255))
     contour.SetInputArrayToProcess(
         0, 0, 0, default_array.get("type"), default_array.get("text")
     )
@@ -198,6 +201,12 @@ def reset_pipeline():
     load_data()
     renderer.ResetCamera()
     renderWindow.Render()
+
+def update_mesh_visibility(visibility):
+    mesh_actor.SetVisibility(visibility)
+
+def update_contour_visibility(visibility):
+    contour_actor.SetVisibility(visibility)
 
 # Selection Change
 def actives_change(ids):
@@ -288,7 +297,22 @@ def standard_buttons():
         hide_details=True,
         dense=True,
     )
-
+    vuetify.VCheckbox( #for background
+        v_model=("white_background", True),
+        on_icon="mdi-white-balance-sunny",
+        off_icon="mdi-weather-night",
+        classes="mx-1",
+        hide_details=True,
+        dense=True,
+    )
+    vuetify.VCheckbox(
+        v_model="$vuetify.theme.dark",
+        on_icon="mdi-lightbulb-off-outline",
+        off_icon="mdi-lightbulb-outline",
+        classes="mx-1",
+        hide_details=True,
+        dense=True,
+    )
     vuetify.VCheckbox(
         v_model=("viewMode", "local"),
         on_icon="mdi-lan-disconnect",
@@ -361,7 +385,7 @@ def mesh_card():
                     # Color By
                     label="Color by",
                     v_model=("mesh_color_array_idx", 0),
-                    items=("array_list", state.color_array_items),
+                    items=("array_list", dataset_arrays),
                     hide_details=True,
                     dense=True,
                     outlined=True,
@@ -412,7 +436,7 @@ def contour_card():
             # Contour By
             label="Contour by",
             v_model=("contour_by_array_idx", 0),
-            items=("array_list", state.color_array_items),
+            items=("array_list", dataset_arrays),
             hide_details=True,
             dense=True,
             outlined=True,
@@ -453,7 +477,7 @@ def contour_card():
                     # Color By
                     label="Color by",
                     v_model=("contour_color_array_idx", 0),
-                    items=("array_list", state.color_array_items),
+                    items=("array_list", dataset_arrays),
                     hide_details=True,
                     dense=True,
                     outlined=True,
@@ -504,11 +528,11 @@ def color_by_array(actor, array):
     mapper.SetUseLookupTableScalarRange(True)
 
 
+
+
 # -----------------------------------------------------------------------------
 # Trame setup / Sequential starts here
 # -----------------------------------------------------------------------------
-
-
 vtk_test_pipeline()
 # Read Data
 reader = vtkXMLUnstructuredGridReader()
@@ -519,6 +543,7 @@ extract_array()
 mesh_mapper_func()
 setup_contour_visualization()
 setup_axes()
+renderer.SetBackground((82/255, 87/255, 110/255))
 load_data()
 reset_pipeline()
 
@@ -528,7 +553,11 @@ state.setdefault("active_ui", None)
 state.setdefault("color_array_items", dataset_arrays)
 
 state.setdefault("viewport_axes_visibility", True)
-state.setdefault("white_background", True)
+state.setdefault("mesh_visibility", True)
+state.setdefault("contour_visibility", True)
+
+
+
 
 # -----------------------------------------------------------------------------
 # GUI
@@ -587,10 +616,24 @@ def set_background_color(color):
 
 @state.change("white_background")
 def toggle_background_color(white_background, **kwargs):
+    global cube_axes
     if white_background:
-        set_background_color([1, 1, 1])  # White
+        set_background_color([5, 5, 5])  # White
+        cube_axes.GetXAxesLinesProperty().SetColor(0, 0, 0)
+        cube_axes.GetYAxesLinesProperty().SetColor(0, 0, 0)
+        cube_axes.GetZAxesLinesProperty().SetColor(0, 0, 0)
+
+        # Set the label colors to black for each axis
+        cube_axes.GetTitleTextProperty(0).SetColor(0, 0, 0)  # X-axis label color
+        cube_axes.GetTitleTextProperty(1).SetColor(0, 0, 0)  # Y-axis label color
+        cube_axes.GetTitleTextProperty(2).SetColor(0, 0, 0)  # Z-axis label color
+
+        # Set tick mark colors to black
+        cube_axes.GetXAxesLinesProperty().SetColor(0, 0, 0)
+        cube_axes.GetYAxesLinesProperty().SetColor(0, 0, 0)
+        cube_axes.GetZAxesLinesProperty().SetColor(0, 0, 0)
     else:
-        set_background_color([0.1, 0.1, 0.1])  # Dark grey (default VTK background)
+        set_background_color([82/255, 87/255, 110/255])  # Dark grey (default VTK background)
 
 @state.change("mesh_color_preset")
 def update_mesh_color_preset(mesh_color_preset, **kwargs):
@@ -678,11 +721,9 @@ def update_vtk_reader(selected_file, **kwargs):
         # Update the reader with the new file path
         reader.SetFileName(file_path)
         reader.Update()
-
-        # Reset and update your VTK pipeline here
-        #reset_pipeline(file_path)
         reset_pipeline()
         ctrl.view_update()
+        ctrl.view_reset_camera()
 
 
 @state.change("cube_axes_visibility")
@@ -690,7 +731,16 @@ def update_cube_axes_visibility(cube_axes_visibility, **kwargs):
     cube_axes.SetVisibility(cube_axes_visibility)
     ctrl.view_update()
 
+@state.change("mesh_visibility")
+def toggle_mesh_visibility(mesh_visibility, **kwargs):
+    print("update mesh visibility!")
+    update_mesh_visibility(mesh_visibility)
+    ctrl.view_update()
 
+@state.change("contour_visibility")
+def toggle_contour_visibility(contour_visibility, **kwargs):
+    print("update contour visibility!")
+    update_contour_visibility(contour_visibility)
 
 # -----------------------------------------------------------------------------
 # Main / Sequencial starts here
