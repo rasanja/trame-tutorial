@@ -722,8 +722,9 @@ def update_vtk_reader(selected_file, **kwargs):
         reader.SetFileName(file_path)
         reader.Update()
         reset_pipeline()
-        ctrl.view_update()
         ctrl.view_reset_camera()
+        ctrl.view_reset_camera()
+        ctrl.view_update()
 
 
 @state.change("cube_axes_visibility")
