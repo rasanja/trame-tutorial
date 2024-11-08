@@ -8,7 +8,7 @@ from trame_vtk.modules.vtk.serializers import configure_serializer
 from vtkmodules.vtkCommonCore import vtkLookupTable
 from vtkmodules.vtkCommonDataModel import vtkDataObject
 from vtkmodules.vtkFiltersCore import vtkContourFilter, vtkGlyph3D
-from vtkmodules.vtkFiltersSources import vtkArrowSource  # Use arrow as the glyph
+from vtkmodules.vtkFiltersSources import vtkArrowSource, vtkSphereSource, vtkConeSource, vtkCylinderSource  # Use arrow as the glyph
 from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridReader
 from vtkmodules.vtkRenderingAnnotation import vtkCubeAxesActor
 from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget
@@ -41,6 +41,10 @@ mesh_lut, mesh_actor,mesh_mapper = vtkLookupTable(),vtkActor(),vtkDataSetMapper(
 contour, contour_actor,contour_lut, contour_mapper = vtkContourFilter(), vtkActor(), vtkLookupTable(), vtkDataSetMapper()
 axes, widget, contour_value,cube_axes = vtkAxesActor(),vtkOrientationMarkerWidget(), 0, vtkCubeAxesActor()
 glyph_source, glyph_filter, glyph_mapper,glyph_actor =vtkArrowSource(), vtkGlyph3D(), vtkDataSetMapper(), vtkActor()
+arrow_source = vtkArrowSource()
+sphere_source = vtkSphereSource()
+cone_source = vtkConeSource()
+cylinder_source = vtkCylinderSource()
 
 class Representation:
     Points = 0
@@ -243,7 +247,6 @@ def update_contour_visibility(visibility):
     contour_actor.SetVisibility(visibility)
 
 def update_glyph_visibility(visibility):
-    global glyph_actor
     glyph_actor.SetVisibility(visibility)
 
 # Selection Change
@@ -555,12 +558,11 @@ def contour_card():
             dense=True,
         )
 
-
 def glyph_card():
     with ui_card(title="Glyph", ui_name="glyph"):
         # Toggle Visibility
         vuetify.VCheckbox(
-            v_model=("glyph_visibility", False),
+            v_model=("glyph_visibility", True),
             on_icon="mdi-eye-outline",
             off_icon="mdi-eye-closed",
             classes="mx-1",
@@ -568,63 +570,32 @@ def glyph_card():
             dense=True,
         )
 
-        # Representation (e.g., Point, Surface, etc. if applicable for glyphs)
+        # Glyph Mode Selector
         vuetify.VSelect(
-            v_model=("glyph_representation", Representation.Points),
+            v_model=("glyph_mode", "Arrow"),  # Default mode (e.g., Arrow)
             items=(
-                "representations",
+                "glyph_modes",
                 [
-                    {"text": "Points", "value": 0},
-                    {"text": "Wireframe", "value": 1},
-                    {"text": "Surface", "value": 2},
-                    {"text": "SurfaceWithEdges", "value": 3},
+                    {"text": "Arrow", "value": "Arrow"},
+                    {"text": "Sphere", "value": "Sphere"},
+                    {"text": "Cone", "value": "Cone"},
+                    {"text": "Cylinder", "value": "Cylinder"},
                 ],
             ),
-            label="Representation",
+            label="Glyph Mode",
             hide_details=True,
             dense=True,
             outlined=True,
             classes="pt-1",
         )
 
-        # Color options (similar to mesh)
-        with vuetify.VRow(classes="pt-2", dense=True):
-            with vuetify.VCol(cols="6"):
-                vuetify.VSelect(
-                    label="Color by",
-                    v_model=("glyph_color_array_idx", 0),
-                    items=("array_list", dataset_arrays),
-                    hide_details=True,
-                    dense=True,
-                    outlined=True,
-                    classes="pt-1",
-                )
-            with vuetify.VCol(cols="6"):
-                vuetify.VSelect(
-                    label="Colormap",
-                    v_model=("glyph_color_preset", LookupTable.Rainbow),
-                    items=(
-                        "colormaps",
-                        [
-                            {"text": "Rainbow", "value": 0},
-                            {"text": "Inv Rainbow", "value": 1},
-                            {"text": "Greyscale", "value": 2},
-                            {"text": "Inv Greyscale", "value": 3},
-                        ],
-                    ),
-                    hide_details=True,
-                    dense=True,
-                    outlined=True,
-                    classes="pt-1",
-                )
-
-        # Scale Slider (specific to glyphs)
+        # Scale Factor Slider
         vuetify.VSlider(
             v_model=("glyph_scale", 0.1),
             min=0.01,
             max=1.0,
             step=0.01,
-            label="Scale",
+            label="Scale Factor",
             classes="mt-1",
             hide_details=True,
             dense=True,
@@ -878,6 +849,34 @@ def toggle_glyph(glyph_visibility, **kwargs):
     global glyph_actor
     print("update glyph visibility!")
     update_glyph_visibility(glyph_visibility)
+
+# Glyph Mode Callback
+@state.change("glyph_mode")
+def update_glyph_mode(glyph_mode, **kwargs):
+    # Logic to set the glyph source based on mode (e.g., Arrow, Sphere, Cone, Cylinder)
+    if glyph_mode == "Arrow":
+        glyph_filter.SetSourceConnection(arrow_source.GetOutputPort())
+    elif glyph_mode == "Sphere":
+        glyph_filter.SetSourceConnection(sphere_source.GetOutputPort())
+    elif glyph_mode == "Cone":
+        glyph_filter.SetSourceConnection(cone_source.GetOutputPort())
+    elif glyph_mode == "Cylinder":
+        glyph_filter.SetSourceConnection(cylinder_source.GetOutputPort())
+    glyph_filter.Update()
+    ctrl.view_update()  # Refresh the view to apply the new mode
+
+
+# Scale Factor Callback
+@state.change("glyph_scale")
+def update_glyph_scale(glyph_scale, **kwargs):
+    glyph_filter.SetScaleFactor(glyph_scale)
+    ctrl.view_update()  # Refresh the view to apply the scale change
+
+# Opacity Callback
+@state.change("glyph_opacity")
+def update_glyph_opacity(glyph_opacity, **kwargs):
+    glyph_actor.GetProperty().SetOpacity(glyph_opacity)
+    ctrl.view_update()  # Refresh the view to apply opacity change
 
 # -----------------------------------------------------------------------------
 # Main / Sequencial starts here
