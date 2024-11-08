@@ -1,11 +1,14 @@
 import os
+
+from fontTools.ttLib.tables.C_P_A_L_ import Color
 from trame.app import get_server
 from trame.ui.vuetify import SinglePageWithDrawerLayout
 from trame.widgets import vtk, vuetify, trame
 from trame_vtk.modules.vtk.serializers import configure_serializer
 from vtkmodules.vtkCommonCore import vtkLookupTable
 from vtkmodules.vtkCommonDataModel import vtkDataObject
-from vtkmodules.vtkFiltersCore import vtkContourFilter
+from vtkmodules.vtkFiltersCore import vtkContourFilter, vtkGlyph3D
+from vtkmodules.vtkFiltersSources import vtkArrowSource, vtkSphereSource, vtkConeSource, vtkCylinderSource  # Use arrow as the glyph
 from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridReader
 from vtkmodules.vtkRenderingAnnotation import vtkCubeAxesActor
 from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget
@@ -21,7 +24,7 @@ from vtkmodules.vtkInteractionStyle import vtkInteractorStyleSwitch  # noqa
 import vtkmodules.vtkRenderingOpenGL2  # noqa
 
 # -----------------------------------------------------------------------------
-# Constants / Globals
+# Constants / Global Initializations
 # -----------------------------------------------------------------------------
 CURRENT_DIRECTORY = os.path.abspath(os.path.dirname(__file__))
 configure_serializer(encode_lut=True, skip_light=True) # Configure scene encoder
@@ -37,6 +40,11 @@ renderer,renderWindow,renderWindowInteractor = vtkRenderer(),vtkRenderWindow(),v
 mesh_lut, mesh_actor,mesh_mapper = vtkLookupTable(),vtkActor(),vtkDataSetMapper()
 contour, contour_actor,contour_lut, contour_mapper = vtkContourFilter(), vtkActor(), vtkLookupTable(), vtkDataSetMapper()
 axes, widget, contour_value,cube_axes = vtkAxesActor(),vtkOrientationMarkerWidget(), 0, vtkCubeAxesActor()
+glyph_source, glyph_filter, glyph_mapper,glyph_actor =vtkArrowSource(), vtkGlyph3D(), vtkDataSetMapper(), vtkActor()
+arrow_source = vtkArrowSource()
+sphere_source = vtkSphereSource()
+cone_source = vtkConeSource()
+cylinder_source = vtkCylinderSource()
 
 class Representation:
     Points = 0
@@ -92,6 +100,23 @@ def mesh_mapper_func():
     mesh_actor = vtkActor()
     mesh_lut = mesh_mapper.GetLookupTable()
 
+def glyph_mapper_func():
+    global glyph_source, glyph_filter, glyph_mapper, reader
+    glyph_filter = vtkGlyph3D()
+    glyph_filter.SetSourceConnection(glyph_source.GetOutputPort())  # Set glyph shape
+    glyph_filter.SetInputConnection(reader.GetOutputPort())  # Connect VTU data
+    glyph_filter.SetScaleFactor(0.1)  # Adjust scale as needed for visibility
+
+    # Step 4: Set up the mapper and actor for glyphs
+    glyph_mapper = vtkDataSetMapper()
+    glyph_mapper.SetInputConnection(glyph_filter.GetOutputPort())
+    glyph_actor = vtkActor()
+    glyph_actor.SetMapper(glyph_mapper)
+    glyph_actor.SetVisibility(False)  # Start with glyph off (for toggling)
+
+    # Add the actor to the renderer
+    renderer.AddActor(glyph_actor)
+
 def setup_contour_visualization():
     global contour, contour_actor, contour_lut,contour_mapper
     contour = vtkContourFilter()
@@ -114,6 +139,7 @@ def setup_axes():
 def load_data():
     global dataset_arrays, default_array, default_min, default_max,mesh_mapper,mesh_actor,mesh_lut
     global contour, contour_actor, contour_lut, contour_mapper,renderer,cube_axes,contour_mapper,contour_value,axes
+    global glyph_filter, glyph_mapper, glyph_actor
     print("Dataset_arrays: ", dataset_arrays)
     print("Load_data called!!!!")
 # Mesh
@@ -150,6 +176,7 @@ def load_data():
 
     # Contour: ContourBy default array
     contour_value = 0.5 * (default_max + default_min)
+    renderer.SetBackground((82 / 255, 87 / 255, 110 / 255))
     contour.SetInputArrayToProcess(
         0, 0, 0, default_array.get("type"), default_array.get("text")
     )
@@ -175,6 +202,20 @@ def load_data():
         contour_mapper.SetScalarModeToUseCellFieldData()
     contour_mapper.SetScalarVisibility(True)
     contour_mapper.SetUseLookupTableScalarRange(True)
+
+    # Glyph setup
+    glyph_source = vtkArrowSource()  # Or use another glyph shape as needed
+    glyph_filter = vtkGlyph3D()
+    glyph_filter.SetSourceConnection(glyph_source.GetOutputPort())
+    glyph_filter.SetInputConnection(reader.GetOutputPort())  # Connect VTU data
+    glyph_filter.SetScaleFactor(0.1)  # Adjust for visibility
+
+    glyph_mapper = vtkDataSetMapper()
+    glyph_mapper.SetInputConnection(glyph_filter.GetOutputPort())
+    glyph_actor = vtkActor()
+    glyph_actor.SetMapper(glyph_mapper)
+    glyph_actor.SetVisibility(False)  # Start with glyph off
+    renderer.AddActor(glyph_actor)
 
     # Cube Axes
     renderer.AddActor(cube_axes)
@@ -206,6 +247,8 @@ def actives_change(ids):
         state.active_ui = "mesh"
     elif _id == "2":  # Contour
         state.active_ui = "contour"
+    elif _id == "3":  # Contour
+        state.active_ui = "glyph"
     else:
         state.active_ui = "nothing"
 
@@ -218,6 +261,8 @@ def visibility_change(event):
         mesh_actor.SetVisibility(_visibility)
     elif _id == "2":  # Contour
         contour_actor.SetVisibility(_visibility)
+    elif _id == "3":  # Glyph
+        glyph_actor.SetVisibility(_visibility)
     ctrl.view_update()
 
 # Representation Callbacks
@@ -324,6 +369,7 @@ def pipeline_widget():
             [
                 {"id": "1", "parent": "0", "visible": 1, "name": "Mesh"},
                 {"id": "2", "parent": "1", "visible": 1, "name": "Contour"},
+                {"id": "3", "parent": "2", "visible": 0, "name": "Glyph"},
             ],
         ),
         actives_change=(actives_change, "[$event]"),
@@ -489,6 +535,51 @@ def contour_card():
             dense=True,
         )
 
+def glyph_card():
+    with ui_card(title="Glyph", ui_name="glyph"):
+        # Glyph Mode Selector
+        vuetify.VSelect(
+            v_model=("glyph_mode", "Arrow"),  # Default mode (e.g., Arrow)
+            items=(
+                "glyph_modes",
+                [
+                    {"text": "Arrow", "value": "Arrow"},
+                    {"text": "Sphere", "value": "Sphere"},
+                    {"text": "Cone", "value": "Cone"},
+                    {"text": "Cylinder", "value": "Cylinder"},
+                ],
+            ),
+            label="Glyph Mode",
+            hide_details=True,
+            dense=True,
+            outlined=True,
+            classes="pt-1",
+        )
+
+        # Scale Factor Slider
+        vuetify.VSlider(
+            v_model=("glyph_scale", 0.1),
+            min=0.01,
+            max=1.0,
+            step=0.01,
+            label="Scale Factor",
+            classes="mt-1",
+            hide_details=True,
+            dense=True,
+        )
+
+        # Opacity Slider
+        vuetify.VSlider(
+            v_model=("glyph_opacity", 1.0),
+            min=0,
+            max=1,
+            step=0.1,
+            label="Opacity",
+            classes="mt-1",
+            hide_details=True,
+            dense=True,
+        )
+
 # Color By Callbacks
 def color_by_array(actor, array):
     _min, _max = array.get("range")
@@ -503,11 +594,11 @@ def color_by_array(actor, array):
     mapper.SetUseLookupTableScalarRange(True)
 
 
+
+
 # -----------------------------------------------------------------------------
 # Trame setup / Sequential starts here
 # -----------------------------------------------------------------------------
-
-
 vtk_test_pipeline()
 # Read Data
 reader = vtkXMLUnstructuredGridReader()
@@ -516,8 +607,10 @@ reader.Update()
 
 extract_array()
 mesh_mapper_func()
+glyph_mapper_func()
 setup_contour_visualization()
 setup_axes()
+renderer.SetBackground((82/255, 87/255, 110/255))
 load_data()
 reset_pipeline()
 
@@ -527,7 +620,9 @@ state.setdefault("active_ui", None)
 state.setdefault("color_array_items", dataset_arrays)
 
 state.setdefault("viewport_axes_visibility", True)
-state.setdefault("white_background", True)
+
+
+
 
 # -----------------------------------------------------------------------------
 # GUI
@@ -557,6 +652,7 @@ with SinglePageWithDrawerLayout(server) as layout:
         vuetify.VDivider(classes="mb-2")
         mesh_card()
         contour_card()
+        glyph_card()
 
     with layout.content:
         # content components
@@ -564,8 +660,6 @@ with SinglePageWithDrawerLayout(server) as layout:
             fluid=True,
             classes="pa-0 fill-height",
         ):
-            # view = vtk.VtkRemoteView(renderWindow, interactive_ratio=1)
-            # view = vtk.VtkLocalView(renderWindow)
             view = vtk.VtkRemoteLocalView(
                 renderWindow, namespace="view", mode="local", interactive_ratio=1
             )
@@ -586,10 +680,24 @@ def set_background_color(color):
 
 @state.change("white_background")
 def toggle_background_color(white_background, **kwargs):
+    global cube_axes
     if white_background:
-        set_background_color([1, 1, 1])  # White
+        set_background_color([5, 5, 5])  # White
+        cube_axes.GetXAxesLinesProperty().SetColor(0, 0, 0)
+        cube_axes.GetYAxesLinesProperty().SetColor(0, 0, 0)
+        cube_axes.GetZAxesLinesProperty().SetColor(0, 0, 0)
+
+        # Set the label colors to black for each axis
+        cube_axes.GetTitleTextProperty(0).SetColor(0, 0, 0)  # X-axis label color
+        cube_axes.GetTitleTextProperty(1).SetColor(0, 0, 0)  # Y-axis label color
+        cube_axes.GetTitleTextProperty(2).SetColor(0, 0, 0)  # Z-axis label color
+
+        # Set tick mark colors to black
+        cube_axes.GetXAxesLinesProperty().SetColor(0, 0, 0)
+        cube_axes.GetYAxesLinesProperty().SetColor(0, 0, 0)
+        cube_axes.GetZAxesLinesProperty().SetColor(0, 0, 0)
     else:
-        set_background_color([0.1, 0.1, 0.1])  # Dark grey (default VTK background)
+        set_background_color([82/255, 87/255, 110/255])  # Dark grey (default VTK background)
 
 @state.change("mesh_color_preset")
 def update_mesh_color_preset(mesh_color_preset, **kwargs):
@@ -677,10 +785,9 @@ def update_vtk_reader(selected_file, **kwargs):
         # Update the reader with the new file path
         reader.SetFileName(file_path)
         reader.Update()
-
-        # Reset and update your VTK pipeline here
-        #reset_pipeline(file_path)
         reset_pipeline()
+        ctrl.view_reset_camera()
+        ctrl.view_reset_camera()
         ctrl.view_update()
 
 
@@ -689,7 +796,33 @@ def update_cube_axes_visibility(cube_axes_visibility, **kwargs):
     cube_axes.SetVisibility(cube_axes_visibility)
     ctrl.view_update()
 
+# Glyph Mode Callback
+@state.change("glyph_mode")
+def update_glyph_mode(glyph_mode, **kwargs):
+    # Logic to set the glyph source based on mode (e.g., Arrow, Sphere, Cone, Cylinder)
+    if glyph_mode == "Arrow":
+        glyph_filter.SetSourceConnection(arrow_source.GetOutputPort())
+    elif glyph_mode == "Sphere":
+        glyph_filter.SetSourceConnection(sphere_source.GetOutputPort())
+    elif glyph_mode == "Cone":
+        glyph_filter.SetSourceConnection(cone_source.GetOutputPort())
+    elif glyph_mode == "Cylinder":
+        glyph_filter.SetSourceConnection(cylinder_source.GetOutputPort())
+    glyph_filter.Update()
+    ctrl.view_update()  # Refresh the view to apply the new mode
 
+
+# Scale Factor Callback
+@state.change("glyph_scale")
+def update_glyph_scale(glyph_scale, **kwargs):
+    glyph_filter.SetScaleFactor(glyph_scale)
+    ctrl.view_update()  # Refresh the view to apply the scale change
+
+# Opacity Callback
+@state.change("glyph_opacity")
+def update_glyph_opacity(glyph_opacity, **kwargs):
+    glyph_actor.GetProperty().SetOpacity(glyph_opacity)
+    ctrl.view_update()  # Refresh the view to apply opacity change
 
 # -----------------------------------------------------------------------------
 # Main / Sequencial starts here
